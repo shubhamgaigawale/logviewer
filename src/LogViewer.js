@@ -8,22 +8,46 @@ const LogViewer = () => {
   const [filterText, setFilterText] = useState('');
   const [copySuccess, setCopySuccess] = useState('');
 
-  // Handle file upload and parsing JSON
+  // Handle file upload and parsing JSON or LOG
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
+    if (!file) {
+      console.error("No file selected");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target.result;
       try {
-        const parsedLogs = content
-          .trim()
-          .split('\n')
-          .map((line) => JSON.parse(line));
+        let parsedLogs;
+        if (file.name.endsWith('.json')) {
+          console.log("Parsing JSON file");
+          parsedLogs = JSON.parse(content);
+        } else if (file.name.endsWith('.log')) {
+          console.log("Parsing LOG file");
+          parsedLogs = content
+            .trim()
+            .split('\n')
+            .map((line, index) => {
+              try {
+                return JSON.parse(line);
+              } catch (lineError) {
+                console.error(`Error parsing line ${index + 1}:`, lineError);
+                return null;
+              }
+            })
+            .filter(log => log !== null);
+        } else {
+          throw new Error('Unsupported file type');
+        }
+        console.log("Parsed logs:", parsedLogs);
         setLogs(parsedLogs);
       } catch (error) {
-        console.error("Error parsing JSON", error);
+        console.error("Error parsing file", error);
       }
     };
+    reader.onerror = (error) => console.error("FileReader error:", error);
     reader.readAsText(file);
   };
 
@@ -53,7 +77,7 @@ const LogViewer = () => {
 
   // Function to copy row data
   const copyRowData = (log) => {
-    const rowData = `Timestamp: ${log.instant?.epochSecond}, Level: ${log.level}, Thread: ${log.thread}, Message: ${log.message}`;
+    const rowData = `Timestamp: ${log.Timestamp}, Level: ${log.Level}, Message: ${log.MessageTemplate}`;
     copyToClipboard(rowData);
   };
 
@@ -84,7 +108,7 @@ const LogViewer = () => {
       <h1 className="text-2xl font-bold mb-5">Log Viewer</h1>
       <input
         type="file"
-        accept=".json"
+        accept=".json .log"
         onChange={handleFileUpload}
         className="mb-5 p-2 border"
       />
@@ -118,14 +142,13 @@ const LogViewer = () => {
           {filteredAndSortedLogs.map((log, index) => (
             <tr
               key={index}
-              className={`border ${log.level === "ERROR" ? "bg-red-100" : ""}`}
+              className={`border ${log.Level === "Error" ? "bg-red-100" : ""}`}
             >
-              <td className="px-4 py-2">{log.instant?.epochSecond}</td>
-              <td className={`px-4 py-2 ${log.level === "ERROR" ? "text-red-600" : ""}`}>
-                {log.level}
+              <td className="px-4 py-2">{log.Timestamp || 'N/A'}</td>
+              <td className={`px-4 py-2 ${log.Level === "Error" ? "text-red-600" : ""}`}>
+                {log.Level || 'N/A'}
               </td>
-              <td className="px-4 py-2">{log.thread}</td>
-              <td className="px-4 py-2">{log.message}</td>
+              <td className="px-4 py-2">{log.MessageTemplate || 'N/A'}</td>
               <td className="px-4 py-2">
                 <button
                   onClick={() => openErrorDetails(log)}
@@ -158,33 +181,24 @@ const LogViewer = () => {
               </svg>
             </button>
             <div className="p-6">
-              <h2 className="text-2xl font-bold text-red-600 mb-4">Error Details</h2>
-              <p className="mt-2"><strong>Timestamp:</strong> {selectNode.instant?.epochSecond}</p>
-              <p className="mt-2"><strong>Message:</strong> {selectNode.message}</p>
-              <p className="mt-2"><strong>Thread:</strong> {selectNode.thread}</p>
-              <p className="mt-2"><strong>Logger:</strong> {selectNode.loggerName}</p>
-              <p className="mt-2"><strong>Thrown:</strong> {selectNode.thrown?.message || 'None'}</p>
-              
-              {selectNode.thrown?.extendedStackTrace && (
+              <h2 className="text-2xl font-bold text-red-600 mb-4">Log Details</h2>
+              <p className="mt-2"><strong>Timestamp:</strong> {selectNode.Timestamp}</p>
+              <p className="mt-2"><strong>Level:</strong> {selectNode.Level}</p>
+              <p className="mt-2"><strong>Message:</strong> {selectNode.MessageTemplate}</p>
+              {selectNode.Properties && (
                 <div className="mt-4">
-                  <h3 className="text-xl font-semibold">Stack Trace:</h3>
-                  <div className="relative">
-                    <pre className="bg-gray-100 p-4 mt-2 overflow-x-auto rounded text-sm">
-                      {selectNode.thrown.extendedStackTrace.map((trace, index) => (
-                        <div key={index} className="mb-1">
-                          {`${trace.class}.${trace.method}(${trace.file}:${trace.line})`}
-                        </div>
-                      ))}
-                    </pre>
-                    <button
-                      onClick={() => copyToClipboard(selectNode.thrown.extendedStackTrace.map(trace => 
-                        `${trace.class}.${trace.method}(${trace.file}:${trace.line})`
-                      ).join('\n'))}
-                      className="absolute top-2 right-2 px-2 py-1 bg-blue-500 text-white rounded"
-                    >
-                      Copy Stack Trace
-                    </button>
-                  </div>
+                  <h3 className="text-xl font-semibold">Properties:</h3>
+                  <pre className="bg-gray-100 p-4 mt-2 overflow-x-auto rounded text-sm">
+                    {JSON.stringify(selectNode.Properties, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {selectNode.Exception && (
+                <div className="mt-4">
+                  <h3 className="text-xl font-semibold">Exception:</h3>
+                  <pre className="bg-gray-100 p-4 mt-2 overflow-x-auto rounded text-sm">
+                    {selectNode.Exception}
+                  </pre>
                 </div>
               )}
             </div>
